@@ -19,6 +19,8 @@ public class FragmentationService {
     private DataService dataService;
 
     public FragmentationResponse processFragmentation(FragmentationRequest request) {
+        clearSitesDirectory();
+        
         List<Student> students = dataService.getStudents();
         
         // 1. Parse Predicates
@@ -145,6 +147,18 @@ public class FragmentationService {
             }
         }
         return validMinterms;
+    }
+
+    private void clearSitesDirectory() {
+        File dir = new File("sites");
+        if (dir.exists() && dir.isDirectory()) {
+            File[] files = dir.listFiles((d, name) -> name.startsWith("Site_") && name.endsWith(".csv"));
+            if (files != null) {
+                for (File f : files) {
+                    f.delete();
+                }
+            }
+        }
     }
 
     private void exportFragmentToCsv(Fragment fragment) {
