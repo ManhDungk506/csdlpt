@@ -4,6 +4,11 @@ import com.university.predicatetester.model.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -90,7 +95,9 @@ public class FragmentationService {
                 }
             }
             if (!fStudents.isEmpty()) {
-                fragments.add(new Fragment("F" + fCounter++, m, fStudents));
+                Fragment fragment = new Fragment("F" + fCounter++, m, fStudents);
+                fragments.add(fragment);
+                exportFragmentToCsv(fragment);
             }
         }
         
@@ -138,5 +145,62 @@ public class FragmentationService {
             }
         }
         return validMinterms;
+    }
+
+    private void exportFragmentToCsv(Fragment fragment) {
+        File dir = new File("sites");
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        
+        File file = new File(dir, "Site_" + fragment.getId() + ".csv");
+        try (FileWriter writer = new FileWriter(file)) {
+            writer.write("ID,Name,GPA,Major,Year,Credits\n");
+            for (Student s : fragment.getStudents()) {
+                writer.write(s.getId() + "," + s.getName() + "," + s.getGpa() + "," +
+                             s.getMajor() + "," + s.getYear() + "," + s.getCredits() + "\n");
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to export " + fragment.getId());
+        }
+    }
+
+    public List<Student> reconstruct() {
+        List<Student> allStudents = new ArrayList<>();
+        File dir = new File("sites");
+        if (dir.exists() && dir.isDirectory()) {
+            File[] files = dir.listFiles((d, name) -> name.startsWith("Site_") && name.endsWith(".csv"));
+            if (files != null) {
+                for (File f : files) {
+                    try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+                        String line;
+                        boolean first = true;
+                        while ((line = br.readLine()) != null) {
+                            if (first) { first = false; continue; }
+                            String[] parts = line.split(",");
+                            if (parts.length >= 6) {
+                                allStudents.add(new Student(
+                                    parts[0], parts[1], Double.parseDouble(parts[2]),
+                                    parts[3], parts[4], Integer.parseInt(parts[5])
+                                ));
+                            }
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+        // Sort by ID to restore original order
+        allStudents.sort(Comparator.comparing(Student::getId));
+        return allStudents;
+    }
+
+    public boolean deleteSite(String fragmentId) {
+        File file = new File("sites/Site_" + fragmentId + ".csv");
+        if (file.exists()) {
+            return file.delete();
+        }
+        return false;
     }
 }

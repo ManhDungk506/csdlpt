@@ -30,4 +30,14 @@ public class FragmentationController {
     public List<Student> getStudents() {
         return dataService.getStudents();
     }
+
+    @GetMapping("/reconstruct")
+    public List<Student> reconstruct() {
+        return fragmentationService.reconstruct();
+    }
+
+    @DeleteMapping("/site/{id}")
+    public boolean deleteSite(@PathVariable String id) {
+        return fragmentationService.deleteSite(id);
+    }
 }

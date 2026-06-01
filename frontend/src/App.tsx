@@ -42,6 +42,9 @@ function App() {
   const [newPredicate, setNewPredicate] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<FragmentationResponse | null>(null);
+  const [reconstructedStudents, setReconstructedStudents] = useState<Student[] | null>(null);
+  const [reconstructing, setReconstructing] = useState(false);
+  const [deadNodes, setDeadNodes] = useState<string[]>([]);
 
   useEffect(() => {
     fetchStudents();
@@ -84,6 +87,8 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         setResult(data);
+        setReconstructedStudents(null); // Reset when running new fragmentation
+        setDeadNodes([]); // Reset dead nodes
       }
     } catch (error) {
       console.error('Error fragmenting data:', error);
@@ -101,6 +106,33 @@ function App() {
   const getDropReason = (pText: string) => {
     if (!result) return null;
     return result.dropReasons.find(r => r.includes(pText));
+  };
+
+  const handleReconstruct = async () => {
+    setReconstructing(true);
+    try {
+      const response = await fetch('http://localhost:8080/api/reconstruct');
+      if (response.ok) {
+        const data = await response.json();
+        setReconstructedStudents(data);
+      }
+    } catch (error) {
+      console.error('Error reconstructing data:', error);
+      alert('Lỗi kết nối tới Backend khi thực hiện Tái tạo dữ liệu.');
+    } finally {
+      setReconstructing(false);
+    }
+  };
+
+  const handleKillNode = async (fragmentId: string) => {
+    if (window.confirm(`Bạn có chắc muốn giả lập đánh sập Node chứa Phân mảnh ${fragmentId} không?`)) {
+      try {
+        await fetch(`http://localhost:8080/api/site/${fragmentId}`, { method: 'DELETE' });
+        setDeadNodes(prev => [...prev, fragmentId]);
+      } catch (error) {
+        console.error('Error killing node:', error);
+      }
+    }
   };
 
   return (
@@ -250,11 +282,26 @@ function App() {
                 <h3 style={{ fontSize: '1.2rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
                   Các Phân mảnh Dữ liệu ({result.fragments.length})
                 </h3>
-                {result.fragments.map((f) => (
-                  <div key={f.id} className="fragment-card">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {result.fragments.map(f => {
+                  const isDead = deadNodes.includes(f.id);
+                  return (
+                  <div key={f.id} className="fragment-card" style={{ opacity: isDead ? 0.5 : 1, filter: isDead ? 'grayscale(100%)' : 'none', position: 'relative' }}>
+                    {isDead && (
+                      <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(239, 68, 68, 0.9)', color: 'white', padding: '1rem 2rem', borderRadius: '8px', fontSize: '1.5rem', fontWeight: 'bold', zIndex: 10, border: '2px solid white' }}>
+                        NODE OFFLINE (BỊ SẬP)
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                      <h4 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Phân mảnh {f.id}</h4>
-                      <span className="badge badge-success">{f.students.length} bản ghi</span>
+                      <h4 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Phân mảnh {f.id} (Lưu tại Node {f.id})</h4>
+                      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                        <span className="badge badge-success">{f.students.length} bản ghi</span>
+                        {!isDead && (
+                          <button onClick={() => handleKillNode(f.id)} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.2rem 0.5rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                            [X] Đánh sập Node này
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div style={{ marginBottom: '1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                       Minterm: {f.minterm.text}
@@ -284,7 +331,66 @@ function App() {
                       </table>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
+              </div>
+            </div>
+
+              {/* Reconstruction Section */}
+              <div style={{ marginTop: '3rem', borderTop: '1px solid var(--border-color)', paddingTop: '2rem' }}>
+                <h3 style={{ fontSize: '1.2rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
+                  Quy tắc Tái tạo (Reconstruction)
+                </h3>
+                <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+                  Các phân mảnh đã được lưu thành các file `Site_F*.csv` riêng biệt (đại diện cho các trạm phân tán). Nhấn nút dưới đây để mô phỏng quá trình gộp (UNION) dữ liệu từ các trạm về lại bảng gốc.
+                </p>
+                <button 
+                  className="btn" 
+                  style={{ background: '#10b981', marginBottom: '1.5rem' }}
+                  onClick={handleReconstruct}
+                  disabled={reconstructing}
+                >
+                  {reconstructing ? 'Đang Tái tạo...' : <><Database className="w-5 h-5" /> Tái tạo Dữ liệu (Reconstruct)</>}
+                </button>
+
+                {reconstructedStudents && (
+                  <div className="fragment-card" style={{ background: reconstructedStudents.length < 30 ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)', borderColor: reconstructedStudents.length < 30 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                      <h4 style={{ fontSize: '1.1rem', fontWeight: 600, color: reconstructedStudents.length < 30 ? '#ef4444' : '#10b981' }}>
+                        Dữ liệu Đã Tái tạo {reconstructedStudents.length < 30 ? '(THẤT BẠI - MẤT MÁT DỮ LIỆU)' : '(THÀNH CÔNG)'}
+                      </h4>
+                      <span className="badge" style={{ background: reconstructedStudents.length < 30 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)', color: reconstructedStudents.length < 30 ? '#ef4444' : '#10b981' }}>
+                        {reconstructedStudents.length} / 30 bản ghi
+                      </span>
+                    </div>
+                    <div className="table-container">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>MÃ SV</th>
+                            <th>HỌ TÊN</th>
+                            <th>ĐIỂM (GPA)</th>
+                            <th>NGÀNH</th>
+                            <th>NĂM HỌC</th>
+                            <th>TÍN CHỈ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reconstructedStudents.map(s => (
+                            <tr key={s.id}>
+                              <td>{s.id}</td>
+                              <td>{s.name}</td>
+                              <td>{s.gpa.toFixed(2)}</td>
+                              <td>{s.major}</td>
+                              <td>{s.year}</td>
+                              <td>{s.credits}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
 
             </div>
